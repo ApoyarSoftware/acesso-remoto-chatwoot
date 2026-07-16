@@ -229,12 +229,52 @@ function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Copy to clipboard helper
+  // Copy to clipboard helper with fallback for iframes (like Chatwoot)
   const copyToClipboard = (text, id) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    showToast('Copiado para a área de transferência!');
-    setTimeout(() => setCopiedId(null), 2000);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+          .then(() => {
+            setCopiedId(id);
+            showToast('Copiado para a área de transferência!');
+            setTimeout(() => setCopiedId(null), 2000);
+          })
+          .catch(() => {
+            fallbackCopyToClipboard(text, id);
+          });
+      } else {
+        fallbackCopyToClipboard(text, id);
+      }
+    } catch (err) {
+      fallbackCopyToClipboard(text, id);
+    }
+  };
+
+  const fallbackCopyToClipboard = (text, id) => {
+    try {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.top = "0";
+      textArea.style.left = "0";
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      
+      if (successful) {
+        setCopiedId(id);
+        showToast('Copiado para a área de transferência!');
+        setTimeout(() => setCopiedId(null), 2000);
+      } else {
+        showToast('Não foi possível copiar automaticamente.', 'error');
+      }
+    } catch (err) {
+      showToast('Erro ao copiar texto.', 'error');
+    }
   };
 
   // 1. Escuta eventos do Chatwoot
