@@ -13,6 +13,31 @@ app.use(express.json());
 // Servir arquivos estáticos do frontend (compilado pelo Vite na pasta public)
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Token de sessão gerado dinamicamente ao iniciar o servidor
+const SESSION_TOKEN = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+
+// Middleware de Autenticação
+const authenticate = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const tokenQuery = req.query.token;
+  const bypassToken = process.env.BYPASS_TOKEN;
+
+  // 1. Permite se o token query param for igual ao bypass token
+  if (tokenQuery && bypassToken && tokenQuery === bypassToken) {
+    return next();
+  }
+
+  // 2. Permite se o header Authorization for o token de sessão ou o bypass token
+  if (authHeader) {
+    const token = authHeader.split(' ')[1]; // "Bearer <token>"
+    if (token === SESSION_TOKEN || (bypassToken && token === bypassToken)) {
+      return next();
+    }
+  }
+
+  return res.status(401).json({ error: 'Não autorizado. Faça login para continuar.' });
+};
+
 // Configuração do PostgreSQL Pool
 const pool = new Pool({
   user: process.env.DB_USER,
@@ -22,6 +47,18 @@ const pool = new Pool({
   port: parseInt(process.env.DB_PORT || '5432'),
   // Add SSL if needed, e.g., in production
   ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+});
+
+// Rota de Login Único
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+  const correctUsername = process.env.APP_USERNAME || 'suporte';
+  const correctPassword = process.env.APP_PASSWORD || 'suasenha_segura';
+
+  if (username === correctUsername && password === correctPassword) {
+    return res.json({ token: SESSION_TOKEN });
+  }
+  return res.status(401).json({ error: 'Usuário ou senha incorretos.' });
 });
 
 // Endpoint para testar conexão com o banco
@@ -34,14 +71,14 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// GET /api/filiais-da-rede?cnpj=... (Replica Consulta_todas_filiais)
-app.get('/api/filiais-da-rede', async (req, res) => {
-  const { cnpj } = req.query;
-  if (!cnpj) {
-    return res.status(400).json({ error: 'CNPJ é obrigatório.' });
+// GET /api/filiais-da-rede?cnpj=... or ?rede=... or ?codigo_rede=... (Replica Consulta_todas_filiais)
+app.get('/api/filiais-da-rede', authenticate, async (req, res) => {
+  const { cnpj, rede, codigo_rede } = req.query;
+  if (!cnpj && !rede && !codigo_rede) {
+    return res.status(400).json({ error: 'CNPJ, rede ou codigo_rede é obrigatório.' });
   }
   try {
-    const query = `
+    let query = `
       SELECT 
           f.cnpj,
           f.nome_fantasia AS empresa,
@@ -60,14 +97,31 @@ app.get('/api/filiais-da-rede', async (req, res) => {
           filial f
       JOIN 
           rede r ON f.codigo_rede = r.codigo_rede
-      WHERE 
-          f.codigo_rede = (
-              SELECT codigo_rede 
-              FROM filial 
-              WHERE cnpj = $1
-          );
     `;
-    const result = await pool.query(query, [cnpj]);
+    
+    const params = [];
+    if (cnpj) {
+      query += `
+        WHERE f.codigo_rede = (
+            SELECT codigo_rede 
+            FROM filial 
+            WHERE cnpj = $1
+        );
+      `;
+      params.push(cnpj);
+    } else if (codigo_rede) {
+      query += `
+        WHERE f.codigo_rede = $1;
+      `;
+      params.push(parseInt(codigo_rede, 10));
+    } else if (rede) {
+      query += `
+        WHERE r.descricao_rede ILIKE $1;
+      `;
+      params.push(`%${rede}%`);
+    }
+
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -76,7 +130,7 @@ app.get('/api/filiais-da-rede', async (req, res) => {
 });
 
 // GET /api/filial/:cnpj (Replica Consulta_filial)
-app.get('/api/filial/:cnpj', async (req, res) => {
+app.get('/api/filial/:cnpj', authenticate, async (req, res) => {
   const { cnpj } = req.params;
   try {
     const query = `
@@ -113,7 +167,7 @@ app.get('/api/filial/:cnpj', async (req, res) => {
 });
 
 // GET /api/acessos?cnpj=... (Replica Consulta_acessos)
-app.get('/api/acessos', async (req, res) => {
+app.get('/api/acessos', authenticate, async (req, res) => {
   const { cnpj } = req.query;
   if (!cnpj) {
     return res.status(400).json({ error: 'CNPJ é obrigatório para listar acessos.' });
@@ -134,7 +188,7 @@ app.get('/api/acessos', async (req, res) => {
 });
 
 // POST /api/acessos (Replica Cadastro_acessos)
-app.post('/api/acessos', async (req, res) => {
+app.post('/api/acessos', authenticate, async (req, res) => {
   const {
     id_filial,
     id_rede,
@@ -199,7 +253,7 @@ app.post('/api/acessos', async (req, res) => {
 });
 
 // PUT /api/acessos/:id (Replica Altera_cadastro_acesso)
-app.put('/api/acessos/:id', async (req, res) => {
+app.put('/api/acessos/:id', authenticate, async (req, res) => {
   const { id } = req.params;
   const {
     equipamento,
@@ -249,7 +303,7 @@ app.put('/api/acessos/:id', async (req, res) => {
 });
 
 // DELETE /api/acessos/:id (Extra utility just in case)
-app.delete('/api/acessos/:id', async (req, res) => {
+app.delete('/api/acessos/:id', authenticate, async (req, res) => {
   const { id } = req.params;
   try {
     const result = await pool.query('DELETE FROM public.acessos_remotos WHERE id = $1 RETURNING *', [id]);

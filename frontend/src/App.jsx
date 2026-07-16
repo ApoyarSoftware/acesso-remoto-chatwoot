@@ -48,11 +48,75 @@ const SOFTWARES = [
   'RUSTDESK'
 ];
 
+// Icones de Software customizados (AnyDesk e RustDesk) para identificação visual rápida
+const AnyDeskIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '6px', flexShrink: 0 }}>
+    <path d="M12 1.5L7.4 6.1L12 10.7L16.6 6.1L12 1.5Z" fill="#ff4a4a"/>
+    <path d="M12 13.3L7.4 17.9L12 22.5L16.6 17.9L12 13.3Z" fill="#ff4a4a"/>
+    <path d="M6.1 7.4L1.5 12L6.1 16.6L10.7 12L6.1 7.4Z" fill="#ff4a4a"/>
+    <path d="M17.9 7.4L13.3 12L17.9 16.6L22.5 12L17.9 7.4Z" fill="#ff4a4a"/>
+    <path d="M12 7.4L7.4 12L12 16.6L16.6 12L12 7.4Z" fill="#ffffff"/>
+  </svg>
+);
+
+const RustDeskIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '6px', flexShrink: 0 }}>
+    <rect width="24" height="24" rx="5" fill="#0ea5e9" />
+    <path d="M5 8C5 6.89543 5.89543 6 7 6H17C18.1046 6 19 6.89543 19 8V14C19 15.1046 18.1046 16 17 16H7C5.89543 16 5 15.1046 5 14V8Z" stroke="white" strokeWidth="2" />
+    <path d="M9 20H15" stroke="white" strokeWidth="2" strokeLinecap="round" />
+    <path d="M12 16V20" stroke="white" strokeWidth="2" />
+  </svg>
+);
+
 function App() {
   // Chatwoot & Context State
   const [chatwootData, setChatwootData] = useState(null);
   const [agentName, setAgentName] = useState('Suporte');
-  const [initialCnpj, setInitialCnpj] = useState('');
+  const [initialQuery, setInitialQuery] = useState(null);
+
+  // Auth State
+  const [authToken, setAuthToken] = useState(localStorage.getItem('authToken') || '');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  // Logout handler
+  const handleLogout = () => {
+    localStorage.removeItem('authToken');
+    setAuthToken('');
+  };
+
+  // Helper to handle API 401 errors
+  const handleUnauthorized = () => {
+    localStorage.removeItem('authToken');
+    setAuthToken('');
+    showToast('Sessão expirada. Faça login novamente.', 'error');
+  };
+
+  // Login handler
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setLoginError('');
+    try {
+      const response = await fetch(`${API_BASE}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      if (!response.ok) {
+        throw new Error('Usuário ou senha incorretos.');
+      }
+      const data = await response.json();
+      localStorage.setItem('authToken', data.token);
+      setAuthToken(data.token);
+      showToast('Login realizado com sucesso!');
+    } catch (err) {
+      setLoginError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // App State
   const [filiais, setFiliais] = useState([]);
@@ -111,7 +175,7 @@ function App() {
           const cnpjAttr = payload.data.contact?.custom_attributes?.cnpj;
           if (cnpjAttr) {
             const cleanCnpj = cnpjAttr.replace(/\D/g, '');
-            setInitialCnpj(cleanCnpj);
+            setInitialQuery({ cnpj: cleanCnpj });
             setSelectedCnpj(cleanCnpj);
           }
         }
@@ -128,33 +192,65 @@ function App() {
     // Fallback para testes locais
     const urlParams = new URLSearchParams(window.location.search);
     const testCnpj = urlParams.get('cnpj');
+    const testRede = urlParams.get('rede');
+    const testCodigoRede = urlParams.get('codigo_rede');
+    const urlToken = urlParams.get('token');
+
+    if (urlToken) {
+      localStorage.setItem('authToken', urlToken);
+      setAuthToken(urlToken);
+    }
+
     if (testCnpj) {
       const cleanCnpj = testCnpj.replace(/\D/g, '');
-      setInitialCnpj(cleanCnpj);
+      setInitialQuery({ cnpj: cleanCnpj });
       setSelectedCnpj(cleanCnpj);
+    } else if (testRede) {
+      setInitialQuery({ rede: testRede });
+    } else if (testCodigoRede) {
+      setInitialQuery({ codigo_rede: testCodigoRede });
     }
 
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  // 2. Busca filiais da rede quando o CNPJ inicial muda
+  // 2. Busca filiais da rede quando o query inicial muda
   useEffect(() => {
-    if (!selectedCnpj) return;
+    if (!initialQuery) return;
 
     const fetchFiliaisDaRede = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`${API_BASE}/filiais-da-rede?cnpj=${selectedCnpj}`);
+        let url = `${API_BASE}/filiais-da-rede`;
+        if (initialQuery.cnpj) {
+          url += `?cnpj=${initialQuery.cnpj}`;
+        } else if (initialQuery.rede) {
+          url += `?rede=${encodeURIComponent(initialQuery.rede)}`;
+        } else if (initialQuery.codigo_rede) {
+          url += `?codigo_rede=${initialQuery.codigo_rede}`;
+        }
+
+        const response = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (response.status === 401) {
+          handleUnauthorized();
+          return;
+        }
         if (!response.ok) throw new Error('Erro ao buscar filiais da rede.');
         const data = await response.json();
         setFiliais(data);
         
         // Se a filial atual não estiver na lista de filiais da rede, escolhemos a primeira ou a que bate com o CNPJ
-        const matchesCurrent = data.find(f => f.cnpj.replace(/\D/g, '') === selectedCnpj.replace(/\D/g, ''));
-        if (matchesCurrent) {
-          setSelectedCnpj(matchesCurrent.cnpj);
-        } else if (data.length > 0) {
-          setSelectedCnpj(data[0].cnpj);
+        if (data.length > 0) {
+          const matchesCurrent = initialQuery.cnpj
+            ? data.find(f => f.cnpj.replace(/\D/g, '') === initialQuery.cnpj.replace(/\D/g, ''))
+            : null;
+          if (matchesCurrent) {
+            setSelectedCnpj(matchesCurrent.cnpj);
+          } else {
+            setSelectedCnpj(data[0].cnpj);
+          }
         }
       } catch (err) {
         showToast(err.message, 'error');
@@ -164,7 +260,7 @@ function App() {
     };
 
     fetchFiliaisDaRede();
-  }, [initialCnpj]);
+  }, [initialQuery, authToken]);
 
   // 3. Busca detalhes da filial e os acessos quando o CNPJ selecionado muda
   useEffect(() => {
@@ -174,7 +270,13 @@ function App() {
       setLoading(true);
       try {
         // Busca Detalhes da Filial
-        const resFilial = await fetch(`${API_BASE}/filial/${selectedCnpj}`);
+        const resFilial = await fetch(`${API_BASE}/filial/${selectedCnpj}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (resFilial.status === 401) {
+          handleUnauthorized();
+          return;
+        }
         if (resFilial.ok) {
           const detail = await resFilial.json();
           setSelectedFilial(detail);
@@ -183,7 +285,13 @@ function App() {
         }
 
         // Busca Acessos
-        const resAcessos = await fetch(`${API_BASE}/acessos?cnpj=${selectedCnpj}`);
+        const resAcessos = await fetch(`${API_BASE}/acessos?cnpj=${selectedCnpj}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        if (resAcessos.status === 401) {
+          handleUnauthorized();
+          return;
+        }
         if (resAcessos.ok) {
           const accessList = await resAcessos.json();
           setAcessos(accessList);
@@ -198,7 +306,7 @@ function App() {
     };
 
     fetchDetailsAndAcessos();
-  }, [selectedCnpj]);
+  }, [selectedCnpj, authToken]);
 
   // Iniciar formulário de cadastro
   const handleOpenCreateModal = () => {
@@ -239,7 +347,10 @@ function App() {
     try {
       const response = await fetch(`${API_BASE}/acessos`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
         body: JSON.stringify({
           id_filial: selectedFilial.unidade_negocio_id,
           id_rede: selectedFilial.codigo_rede,
@@ -254,6 +365,10 @@ function App() {
         })
       });
 
+      if (response.status === 401) {
+        handleUnauthorized();
+        return;
+      }
       if (!response.ok) throw new Error('Erro ao salvar novo acesso.');
       
       const newAccess = await response.json();
@@ -271,7 +386,10 @@ function App() {
     try {
       const response = await fetch(`${API_BASE}/acessos/${formData.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
         body: JSON.stringify({
           equipamento: formData.equipamento,
           setor: formData.setor,
@@ -283,6 +401,10 @@ function App() {
         })
       });
 
+      if (response.status === 401) {
+        handleUnauthorized();
+        return;
+      }
       if (!response.ok) throw new Error('Erro ao atualizar acesso.');
       
       const updatedAccess = await response.json();
@@ -329,6 +451,59 @@ function App() {
     return clean.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   };
 
+  if (!authToken) {
+    return (
+      <div className="app-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '1rem' }}>
+        {toast && (
+          <div className="toast" style={{ borderColor: toast.type === 'error' ? 'var(--error)' : 'var(--accent)' }}>
+            <Shield size={16} color={toast.type === 'error' ? 'var(--error)' : 'var(--accent)'} />
+            <span>{toast.message}</span>
+          </div>
+        )}
+        <div className="login-card" style={{ maxWidth: '400px', width: '100%', padding: '2.5rem 2rem', borderRadius: '12px', border: '1px solid var(--border)', background: 'var(--card-bg)', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.4)' }}>
+          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+            <Laptop color="var(--accent)" size={48} style={{ marginBottom: '1rem', filter: 'drop-shadow(0 0 8px var(--accent))' }} />
+            <h2 style={{ fontSize: '1.75rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Acessos Remotos</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Acesso restrito para equipe de suporte</p>
+          </div>
+          <form onSubmit={handleLogin}>
+            <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: '500' }}>Usuário</label>
+              <input 
+                type="text" 
+                required 
+                value={username} 
+                onChange={(e) => setUsername(e.target.value)} 
+                style={{ width: '100%', padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'rgba(255, 255, 255, 0.03)', color: 'var(--text-primary)', outline: 'none' }}
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: '500' }}>Senha</label>
+              <input 
+                type="password" 
+                required 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+                style={{ width: '100%', padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'rgba(255, 255, 255, 0.03)', color: 'var(--text-primary)', outline: 'none' }}
+              />
+            </div>
+            {loginError && (
+              <p style={{ color: 'var(--error)', fontSize: '0.875rem', marginBottom: '1.25rem', textAlign: 'center', fontWeight: '500' }}>{loginError}</p>
+            )}
+            <button 
+              type="submit" 
+              className="btn btn-primary" 
+              disabled={loading}
+              style={{ width: '100%', padding: '0.75rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', fontWeight: '600' }}
+            >
+              {loading ? 'Entrando...' : 'Entrar'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       {/* Toast Notification */}
@@ -345,8 +520,15 @@ function App() {
           <Laptop className="copyable" color="var(--accent)" size={24} />
           Acessos Remotos
         </div>
-        <div className="header-subtitle">
-          Agente ativo: <strong>{agentName}</strong>
+        <div className="header-subtitle" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <span>Agente ativo: <strong>{agentName}</strong></span>
+          <button 
+            onClick={handleLogout}
+            className="btn btn-secondary" 
+            style={{ padding: '4px 8px', fontSize: '0.75rem', minHeight: 'auto', background: 'rgba(255, 255, 255, 0.05)', borderColor: 'var(--border)' }}
+          >
+            Sair
+          </button>
         </div>
       </header>
 
@@ -423,7 +605,8 @@ function App() {
 
       {/* Access List Section */}
       <div className="section-header">
-        <span className="section-title">Acessos Remotos Disponíveis</span>
+        {/* Adicionado contador dinâmico (filteredAcessos.length) ao lado do título */}
+        <span className="section-title">Acessos Remotos Disponíveis ({filteredAcessos.length})</span>
         <button 
           className="btn btn-primary" 
           onClick={handleOpenCreateModal}
@@ -473,19 +656,22 @@ function App() {
                 {filteredAcessos.map(acesso => (
                   <tr key={acesso.id}>
                     <td>
+                      {/* Logotipos SVG adicionados ao badge do software para facilitar a identificação rápida */}
                       <span className={`badge ${acesso.software === 'ANYDESK' ? 'badge-software-anydesk' : 'badge-software-rustdesk'}`}>
+                        {acesso.software === 'ANYDESK' ? <AnyDeskIcon /> : <RustDeskIcon />}
                         {acesso.software}
                       </span>
                     </td>
                     <td>{acesso.equipamento}</td>
                     <td>{acesso.setor}</td>
-                    <td className="copyable" onClick={() => copyToClipboard(acesso.id_acesso, `id-${acesso.id}`)}>
+                    {/* Tooltip nativo (title) adicionado para feedback claro de cópia */}
+                    <td className="copyable" title="Copiar ID" onClick={() => copyToClipboard(acesso.id_acesso, `id-${acesso.id}`)}>
                       <div className="flex-center">
                         {acesso.id_acesso}
                         {copiedId === `id-${acesso.id}` ? <Check size={12} color="var(--success)" /> : <Copy size={12} />}
                       </div>
                     </td>
-                    <td className="copyable" onClick={() => copyToClipboard(acesso.senha, `senha-${acesso.id}`)}>
+                    <td className="copyable" title="Copiar Senha" onClick={() => copyToClipboard(acesso.senha, `senha-${acesso.id}`)}>
                       <div className="flex-center">
                         ••••••••
                         {copiedId === `senha-${acesso.id}` ? <Check size={12} color="var(--success)" /> : <Copy size={12} />}
@@ -496,7 +682,7 @@ function App() {
                       <button 
                         className="btn-icon" 
                         onClick={() => handleConnect(acesso)}
-                        title={`Conectar via ${acesso.software === 'ANYDESK' ? 'AnyDesk' : 'RustDesk'}`}
+                        title="Conectar remotamente"
                         style={{ marginRight: '6px', color: 'var(--accent)' }}
                       >
                         <ExternalLink size={14} />
@@ -504,7 +690,7 @@ function App() {
                       <button 
                         className="btn-icon" 
                         onClick={() => handleOpenEditModal(acesso)}
-                        title="Editar"
+                        title="Editar acesso"
                       >
                         <Edit2 size={14} />
                       </button>
@@ -522,6 +708,7 @@ function App() {
                 <div className="access-card-header">
                   <span className="access-card-title">{acesso.equipamento}</span>
                   <span className={`badge ${acesso.software === 'ANYDESK' ? 'badge-software-anydesk' : 'badge-software-rustdesk'}`}>
+                    {acesso.software === 'ANYDESK' ? <AnyDeskIcon /> : <RustDeskIcon />}
                     {acesso.software}
                   </span>
                 </div>
@@ -532,6 +719,7 @@ function App() {
                     <span className="info-label">ID Acesso</span>
                     <div 
                       className="info-value copyable" 
+                      title="Copiar ID"
                       onClick={() => copyToClipboard(acesso.id_acesso, `id-m-${acesso.id}`)}
                     >
                       {acesso.id_acesso}
@@ -542,6 +730,7 @@ function App() {
                     <span className="info-label">Senha</span>
                     <div 
                       className="info-value copyable" 
+                      title="Copiar Senha"
                       onClick={() => copyToClipboard(acesso.senha, `senha-m-${acesso.id}`)}
                     >
                       ••••••••
@@ -561,6 +750,7 @@ function App() {
                     className="btn btn-primary" 
                     style={{ padding: '4px 10px', fontSize: '12px', marginRight: 'auto' }}
                     onClick={() => handleConnect(acesso)}
+                    title="Conectar remotamente"
                   >
                     <ExternalLink size={12} /> Conectar
                   </button>
@@ -568,6 +758,7 @@ function App() {
                     className="btn btn-secondary" 
                     style={{ padding: '4px 10px', fontSize: '12px' }}
                     onClick={() => handleOpenEditModal(acesso)}
+                    title="Editar acesso"
                   >
                     <Edit2 size={12} /> Editar
                   </button>
@@ -577,6 +768,7 @@ function App() {
           </div>
         </>
       )}
+
 
       {/* CREATE MODAL */}
       {isCreateModalOpen && (

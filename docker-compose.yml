@@ -18,6 +18,9 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_PORT=5432
       - DB_SSL=false
+      - APP_USERNAME=${APP_USERNAME}
+      - APP_PASSWORD=${APP_PASSWORD}
+      - BYPASS_TOKEN=${BYPASS_TOKEN}
     deploy:
       mode: replicated
       replicas: 1
