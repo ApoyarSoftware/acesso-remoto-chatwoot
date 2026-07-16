@@ -3,6 +3,8 @@ const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
+const { exec } = require('child_process');
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -204,6 +206,175 @@ app.get('/api/filial/:cnpj', authenticate, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erro ao consultar filial.', details: err.message });
+  }
+});
+
+// PUT /api/filial/:cnpj (Altera cadastro de filial e rede)
+app.put('/api/filial/:cnpj', authenticate, async (req, res) => {
+  const { cnpj } = req.params;
+  const {
+    nome_fantasia,
+    cidade,
+    uf,
+    ativo,
+    cfi_bl_imendes,
+    descricao_rede,
+    acesso,
+    senha,
+    versao_retaguarda
+  } = req.body;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Atualizar filial
+    const filialQuery = `
+      UPDATE public.filial
+      SET 
+          nome_fantasia = $1,
+          cidade = $2,
+          uf = $3,
+          ativo = $4,
+          cfi_bl_imendes = $5
+      WHERE 
+          cnpj = $6
+      RETURNING *;
+    `;
+    const filialValues = [
+      nome_fantasia,
+      cidade,
+      uf,
+      ativo,
+      cfi_bl_imendes,
+      cnpj
+    ];
+    const filialResult = await client.query(filialQuery, filialValues);
+
+    if (filialResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Filial não encontrada.' });
+    }
+
+    const filial = filialResult.rows[0];
+
+    // 2. Atualizar rede associada se existir
+    if (filial.codigo_rede) {
+      const redeQuery = `
+        UPDATE public.rede
+        SET 
+            descricao_rede = $1,
+            usuario = $2,
+            senha = $3,
+            descricao_versao = $4
+        WHERE 
+            codigo_rede = $5;
+      `;
+      const redeValues = [
+        descricao_rede,
+        acesso,
+        senha,
+        versao_retaguarda,
+        filial.codigo_rede
+      ];
+      await client.query(redeQuery, redeValues);
+    }
+
+    await client.query('COMMIT');
+
+    // Retorna a filial atualizada completa
+    const resultQuery = `
+      SELECT 
+          f.cnpj,
+          f.nome_fantasia,
+          r.descricao_rede,
+          f.cidade,
+          f.uf,
+          f.unidade_negocio_id,
+          r.codigo_rede,
+          r.usuario AS acesso,
+          r.senha,
+          r.descricao_versao AS versao_retaguarda,
+          f.ativo,
+          f.cfi_bl_imendes,
+          f.data_ultima_venda
+      FROM 
+          filial f
+      JOIN 
+          rede r ON f.codigo_rede = r.codigo_rede
+      WHERE 
+          f.cnpj = $1;
+    `;
+    const result = await client.query(resultQuery, [cnpj]);
+    res.json(result.rows[0]);
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao alterar dados da filial.', details: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/launch-webposto
+app.post('/api/launch-webposto', authenticate, async (req, res) => {
+  const { user, password } = req.body;
+  if (!user || !password) {
+    return res.status(400).json({ error: 'Usuário e senha são obrigatórios.' });
+  }
+
+  const userProfile = process.env.USERPROFILE || 'C:\\Users\\JuniorCastro';
+  const credPath = path.join(userProfile, 'AppData\\Roaming\\Quality\\Bin\\Credenciais.txt');
+  const exePath = 'C:\\Quality\\web\\QualityPosto.exe';
+
+  try {
+    let jsonData = {
+      SENHA_DO_DIA: "",
+      DATA_ULTIMO_LOGIN: new Date().toLocaleDateString('pt-BR'),
+      USER: user,
+      PASS: password
+    };
+
+    // Tenta ler o arquivo existente para manter outros campos (como SENHA_DO_DIA) se houver
+    if (fs.existsSync(credPath)) {
+      try {
+        const fileContent = fs.readFileSync(credPath, 'utf8').trim();
+        if (fileContent) {
+          const decoded = Buffer.from(fileContent, 'base64').toString('utf8');
+          const parsed = JSON.parse(decoded);
+          jsonData = { ...parsed, USER: user, PASS: password };
+        }
+      } catch (readErr) {
+        console.warn('Não foi possível ler/decodificar o arquivo de credenciais existente, criando novo.', readErr);
+      }
+    }
+
+    // Certificar de que a pasta de destino existe
+    const dirPath = path.dirname(credPath);
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+
+    // Codifica para Base64 e escreve
+    const base64Str = Buffer.from(JSON.stringify(jsonData)).toString('base64');
+    fs.writeFileSync(credPath, base64Str, 'utf8');
+
+    // Inicia o executável local do WebPosto
+    if (fs.existsSync(exePath)) {
+      exec(`start "" "${exePath}"`, (err) => {
+        if (err) {
+          console.error('Erro ao executar QualityPosto.exe:', err);
+        }
+      });
+      return res.json({ success: true, message: 'WebPosto iniciado com sucesso!' });
+    } else {
+      return res.status(404).json({ error: 'Executável QualityPosto.exe não encontrado em C:\\Quality\\web\\' });
+    }
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao configurar credenciais do WebPosto.', details: err.message });
   }
 });
 

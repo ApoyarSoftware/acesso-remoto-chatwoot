@@ -14,7 +14,8 @@ import {
   ExternalLink,
   Shield,
   Layers,
-  FileText
+  FileText,
+  Zap
 } from 'lucide-react';
 import './App.css';
 
@@ -50,21 +51,22 @@ const SOFTWARES = [
 
 // Icones de Software customizados (AnyDesk e RustDesk) para identificação visual rápida
 const AnyDeskIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '6px', flexShrink: 0 }}>
-    <path d="M12 1.5L7.4 6.1L12 10.7L16.6 6.1L12 1.5Z" fill="#ff4a4a"/>
-    <path d="M12 13.3L7.4 17.9L12 22.5L16.6 17.9L12 13.3Z" fill="#ff4a4a"/>
-    <path d="M6.1 7.4L1.5 12L6.1 16.6L10.7 12L6.1 7.4Z" fill="#ff4a4a"/>
-    <path d="M17.9 7.4L13.3 12L17.9 16.6L22.5 12L17.9 7.4Z" fill="#ff4a4a"/>
-    <path d="M12 7.4L7.4 12L12 16.6L16.6 12L12 7.4Z" fill="#ffffff"/>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '6px', flexShrink: 0, filter: 'drop-shadow(0 1px 2px rgba(255, 74, 74, 0.3))' }}>
+    <path d="M12 2L6.5 7.5L12 13L17.5 7.5L12 2Z" fill="#ff4a4a"/>
+    <path d="M12 11L6.5 16.5L12 22L17.5 16.5L12 11Z" fill="#ff4a4a"/>
+    <path d="M5.5 8.5L0 14L5.5 19.5L11 14L5.5 8.5Z" fill="#ff4a4a"/>
+    <path d="M18.5 8.5L13 14L18.5 19.5L24 14L18.5 8.5Z" fill="#ff4a4a"/>
+    <path d="M12 8L7.5 12.5L12 17L16.5 12.5L12 8Z" fill="#ffffff"/>
   </svg>
 );
 
 const RustDeskIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '6px', flexShrink: 0 }}>
-    <rect width="24" height="24" rx="5" fill="#0ea5e9" />
-    <path d="M5 8C5 6.89543 5.89543 6 7 6H17C18.1046 6 19 6.89543 19 8V14C19 15.1046 18.1046 16 17 16H7C5.89543 16 5 15.1046 5 14V8Z" stroke="white" strokeWidth="2" />
-    <path d="M9 20H15" stroke="white" strokeWidth="2" strokeLinecap="round" />
-    <path d="M12 16V20" stroke="white" strokeWidth="2" />
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '6px', flexShrink: 0, filter: 'drop-shadow(0 1px 2px rgba(14, 165, 233, 0.3))' }}>
+    <rect width="24" height="24" rx="6" fill="#0ea5e9" />
+    <path d="M6 8C6 7.44772 6.44772 7 7 7H17C17.5523 7 18 7.44772 18 8V13C18 13.5523 17.5523 14 17 14H7C6.44772 14 6 13.5523 6 13V8Z" stroke="white" strokeWidth="1.8" fill="rgba(255,255,255,0.15)" />
+    <path d="M9 18H15" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+    <path d="M12 14V18" stroke="white" strokeWidth="1.8" />
+    <circle cx="12" cy="10.5" r="1.5" fill="white" />
   </svg>
 );
 
@@ -129,13 +131,15 @@ function App() {
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
   const [globalSearchResults, setGlobalSearchResults] = useState([]);
 
-  // Global search handler
-  const handleGlobalSearch = async (e) => {
-    e.preventDefault();
-    if (!globalSearchTerm.trim()) return;
+  // Reusable search function
+  const performGlobalSearch = async (term) => {
+    if (!term.trim()) {
+      setGlobalSearchResults([]);
+      return;
+    }
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/filiais/search?q=${encodeURIComponent(globalSearchTerm)}`, {
+      const response = await fetch(`${API_BASE}/filiais/search?q=${encodeURIComponent(term)}`, {
         headers: { 'Authorization': `Bearer ${authToken}` }
       });
       if (response.status === 401) {
@@ -150,6 +154,22 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Auto-search effect with 400ms debounce
+  useEffect(() => {
+    if (!authToken) return;
+    const delayDebounceFn = setTimeout(() => {
+      performGlobalSearch(globalSearchTerm);
+    }, 400);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [globalSearchTerm, authToken]);
+
+  // Keep form submit handler to prevent default behavior and force instant search if enter is pressed
+  const handleGlobalSearch = (e) => {
+    if (e) e.preventDefault();
+    performGlobalSearch(globalSearchTerm);
   };
 
   // Select a search result
@@ -177,6 +197,20 @@ function App() {
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isEditFilialModalOpen, setIsEditFilialModalOpen] = useState(false);
+
+  // Form States
+  const [filialFormData, setFilialFormData] = useState({
+    nome_fantasia: '',
+    cidade: '',
+    uf: '',
+    ativo: true,
+    cfi_bl_imendes: false,
+    descricao_rede: '',
+    acesso: '',
+    senha: '',
+    versao_retaguarda: ''
+  });
 
   // Form States
   const [formData, setFormData] = useState({
@@ -354,6 +388,54 @@ function App() {
     fetchDetailsAndAcessos();
   }, [selectedCnpj, authToken]);
 
+  // Iniciar formulário de edição de filial
+  const handleOpenEditFilialModal = () => {
+    setFilialFormData({
+      nome_fantasia: selectedFilial.nome_fantasia || selectedFilial.empresa || '',
+      cidade: selectedFilial.cidade || '',
+      uf: selectedFilial.uf || '',
+      ativo: selectedFilial.ativo,
+      cfi_bl_imendes: selectedFilial.cfi_bl_imendes || false,
+      descricao_rede: selectedFilial.descricao_rede || '',
+      acesso: selectedFilial.acesso || '',
+      senha: selectedFilial.senha || '',
+      versao_retaguarda: selectedFilial.versao_retaguarda || ''
+    });
+    setIsEditFilialModalOpen(true);
+  };
+
+  // Alterar Filial
+  const handleEditFilial = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/filial/${selectedCnpj}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify(filialFormData)
+      });
+
+      if (response.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+      if (!response.ok) throw new Error('Erro ao atualizar filial.');
+      
+      const updatedFilial = await response.json();
+      setSelectedFilial(updatedFilial);
+      setFiliais(prev => prev.map(f => f.cnpj === updatedFilial.cnpj ? { ...f, empresa: updatedFilial.nome_fantasia } : f));
+      setIsEditFilialModalOpen(false);
+      showToast('Dados da filial atualizados com sucesso!');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Iniciar formulário de cadastro
   const handleOpenCreateModal = () => {
     setFormData({
@@ -478,6 +560,36 @@ function App() {
     }
   };
 
+  // Iniciar e preencher o WebPosto local
+  const handleLaunchWebposto = async (user, password) => {
+    if (!user || !password) {
+      showToast('Dados de acesso (usuário/senha) não encontrados para o WebPosto.', 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/launch-webposto`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ user, password })
+      });
+      if (response.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Erro ao iniciar o WebPosto.');
+      showToast(data.message || 'WebPosto iniciado com sucesso!');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Filtrar Acessos
   const filteredAcessos = acessos.filter(acesso => {
     const term = searchTerm.toLowerCase();
@@ -508,9 +620,14 @@ function App() {
         )}
         <div className="login-card" style={{ maxWidth: '400px', width: '100%', padding: '2.5rem 2rem', borderRadius: '12px', border: '1px solid var(--border)', background: 'var(--card-bg)', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.4)' }}>
           <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-            <Laptop color="var(--accent)" size={48} style={{ marginBottom: '1rem', filter: 'drop-shadow(0 0 8px var(--accent))' }} />
-            <h2 style={{ fontSize: '1.75rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Acessos Remotos</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Acesso restrito para equipe de suporte</p>
+            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '64px', height: '64px', borderRadius: '16px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.25)', marginBottom: '1.25rem', boxShadow: '0 0 20px rgba(59, 130, 246, 0.15)' }}>
+              <Zap color="var(--accent)" size={32} style={{ filter: 'drop-shadow(0 0 6px var(--accent))' }} />
+            </div>
+            <h2 style={{ fontSize: '1.85rem', fontWeight: '800', letterSpacing: '-0.02em', marginBottom: '0.5rem' }}>
+              <span style={{ color: '#fff' }}>Apoio</span>
+              <span style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Connect</span>
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Portal de Acessos Remotos</p>
           </div>
           <form onSubmit={handleLogin}>
             <div className="form-group" style={{ marginBottom: '1.25rem' }}>
@@ -560,11 +677,12 @@ function App() {
         </div>
       )}
 
-      {/* Header */}
       <header>
-        <div className="header-title">
-          <Laptop className="copyable" color="var(--accent)" size={24} />
-          Acessos Remotos
+        <div className="header-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Zap className="copyable" color="var(--accent)" size={20} style={{ filter: 'drop-shadow(0 0 5px var(--accent))' }} />
+          <span style={{ fontWeight: '800', fontSize: '1.35rem', letterSpacing: '-0.02em', color: '#fff' }}>Apoio</span>
+          <span style={{ fontWeight: '800', fontSize: '1.35rem', letterSpacing: '-0.02em', background: 'linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Connect</span>
+          <span style={{ fontSize: '0.65rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.15)', color: 'var(--accent)', border: '1px solid rgba(59, 130, 246, 0.2)', marginLeft: '4px', letterSpacing: '0.05em' }}>PRO</span>
         </div>
         <div className="header-subtitle" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <span>Agente ativo: <strong>{agentName}</strong></span>
@@ -665,8 +783,18 @@ function App() {
           {/* Details Card */}
           {selectedFilial && (
             <div className="filial-card">
-              <div className="filial-title">
-                <span>{selectedFilial.nome_fantasia || selectedFilial.empresa}</span>
+              <div className="filial-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>{selectedFilial.nome_fantasia || selectedFilial.empresa}</span>
+                  <button 
+                    onClick={handleOpenEditFilialModal}
+                    className="btn-icon" 
+                    title="Editar Dados da Empresa"
+                    style={{ padding: '4px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', background: 'rgba(255, 255, 255, 0.05)' }}
+                  >
+                    <Edit2 size={14} color="var(--accent)" />
+                  </button>
+                </div>
                 <span className={`badge ${selectedFilial.ativo ? 'badge-active' : 'badge-inactive'}`}>
                   {selectedFilial.ativo ? 'Ativo' : 'Inativo'}
                 </span>
@@ -694,21 +822,35 @@ function App() {
                   <span className="info-value">{selectedFilial.cfi_bl_imendes ? 'Ativado' : 'Desativado'}</span>
                 </div>
                 <div className="info-item">
-                  <span className="info-label">ID Filial / ID Rede</span>
-                  <span className="info-value">F: {selectedFilial.unidade_negocio_id} / R: {selectedFilial.codigo_rede}</span>
+                  <span className="info-label">ID Filial | ID Rede</span>
+                  <span className="info-value">F: {selectedFilial.unidade_negocio_id} | R: {selectedFilial.codigo_rede}</span>
                 </div>
                 <div className="info-item">
-                  <span className="info-label">Rede Acesso / Senha</span>
-                  <span className="info-value">
+                  <span className="info-label">Rede Acesso | Senha</span>
+                  <span className="info-value" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <span>{selectedFilial.acesso}</span>
                     {selectedFilial.senha && (
-                      <button 
-                        className="btn-icon" 
-                        title="Copiar Senha da Rede"
-                        onClick={() => copyToClipboard(selectedFilial.senha, 'rede-pwd')}
-                      >
-                        {copiedId === 'rede-pwd' ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
-                      </button>
+                      <>
+                        <span style={{ color: 'var(--text-secondary)' }}>|</span>
+                        <div 
+                          className="info-value copyable" 
+                          title="Copiar Senha da Rede"
+                          onClick={() => copyToClipboard(selectedFilial.senha, 'rede-pwd')}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', padding: '2px 6px' }}
+                        >
+                          ••••••••
+                          {copiedId === 'rede-pwd' ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
+                        </div>
+                        <button
+                          onClick={() => handleLaunchWebposto(selectedFilial.acesso, selectedFilial.senha)}
+                          className="btn btn-primary"
+                          style={{ padding: '4px 10px', fontSize: '11px', height: '24px', borderRadius: '6px', marginLeft: '6px', gap: '4px', whiteSpace: 'nowrap' }}
+                          title="Abrir WebPosto com Login Automático"
+                          disabled={loading}
+                        >
+                          <ExternalLink size={10} /> Abrir WebPosto
+                        </button>
+                      </>
                     )}
                   </span>
                 </div>
@@ -760,7 +902,6 @@ function App() {
                     <td>{acesso.setor}</td>
                     <td>
                       <span className={`badge ${acesso.software === 'ANYDESK' ? 'badge-software-anydesk' : 'badge-software-rustdesk'}`}>
-                        {acesso.software === 'ANYDESK' ? <AnyDeskIcon /> : <RustDeskIcon />}
                         {acesso.software}
                       </span>
                     </td>
@@ -815,7 +956,6 @@ function App() {
                 <div className="access-card-header">
                   <span className="access-card-title">{acesso.equipamento}</span>
                   <span className={`badge ${acesso.software === 'ANYDESK' ? 'badge-software-anydesk' : 'badge-software-rustdesk'}`}>
-                    {acesso.software === 'ANYDESK' ? <AnyDeskIcon /> : <RustDeskIcon />}
                     {acesso.software}
                   </span>
                 </div>
@@ -1035,6 +1175,122 @@ function App() {
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setIsEditModalOpen(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Atualizar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT FILIAL MODAL */}
+      {isEditFilialModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '550px' }}>
+            <div className="modal-header">
+              <span className="modal-title">Editar Dados da Empresa</span>
+              <button className="btn-icon" onClick={() => setIsEditFilialModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleEditFilial}>
+              <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+                <h3 style={{ fontSize: '0.9rem', color: 'var(--accent)', borderBottom: '1px solid var(--border)', paddingBottom: '6px', marginBottom: '8px', textTransform: 'uppercase', fontWeight: '700' }}>Dados da Filial</h3>
+                
+                <div className="form-group">
+                  <label>Nome Fantasia / Empresa</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={filialFormData.nome_fantasia} 
+                    onChange={(e) => setFilialFormData({...filialFormData, nome_fantasia: e.target.value})} 
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
+                  <div className="form-group">
+                    <label>Cidade</label>
+                    <input 
+                      type="text" 
+                      value={filialFormData.cidade} 
+                      onChange={(e) => setFilialFormData({...filialFormData, cidade: e.target.value})} 
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>UF</label>
+                    <input 
+                      type="text" 
+                      maxLength="2"
+                      value={filialFormData.uf} 
+                      onChange={(e) => setFilialFormData({...filialFormData, uf: e.target.value.toUpperCase()})} 
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '20px', margin: '8px 0' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={filialFormData.ativo} 
+                      onChange={(e) => setFilialFormData({...filialFormData, ativo: e.target.checked})} 
+                    />
+                    Empresa Ativa
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={filialFormData.cfi_bl_imendes} 
+                      onChange={(e) => setFilialFormData({...filialFormData, cfi_bl_imendes: e.target.checked})} 
+                    />
+                    IMendes Ativo
+                  </label>
+                </div>
+
+                <h3 style={{ fontSize: '0.9rem', color: 'var(--accent)', borderBottom: '1px solid var(--border)', paddingBottom: '6px', marginTop: '12px', marginBottom: '8px', textTransform: 'uppercase', fontWeight: '700' }}>Dados da Rede</h3>
+
+                <div className="form-group">
+                  <label>Nome da Rede</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={filialFormData.descricao_rede} 
+                    onChange={(e) => setFilialFormData({...filialFormData, descricao_rede: e.target.value})} 
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Versão Retaguarda</label>
+                  <input 
+                    type="text" 
+                    value={filialFormData.versao_retaguarda} 
+                    onChange={(e) => setFilialFormData({...filialFormData, versao_retaguarda: e.target.value})} 
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="form-group">
+                    <label>Rede Acesso / Usuário</label>
+                    <input 
+                      type="text" 
+                      value={filialFormData.acesso} 
+                      onChange={(e) => setFilialFormData({...filialFormData, acesso: e.target.value})} 
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Senha da Rede</label>
+                    <input 
+                      type="text" 
+                      value={filialFormData.senha} 
+                      onChange={(e) => setFilialFormData({...filialFormData, senha: e.target.value})} 
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setIsEditFilialModalOpen(false)}>
                   Cancelar
                 </button>
                 <button type="submit" className="btn btn-primary">
