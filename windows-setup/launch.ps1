@@ -7,7 +7,7 @@ $logFile = "$logDir\protocol.log"
 Get-Date | Out-File -FilePath $logFile -Append
 "URL recebida: $url" | Out-File -FilePath $logFile -Append
 
-if ($url -match "quality://login\?user=([^&]+)&pass=(.+)") {
+if ($url -match "quality://login/?\?user=([^&]+)&pass=(.+)") {
     $rawUser = $Matches[1]
     $rawPass = $Matches[2]
 
