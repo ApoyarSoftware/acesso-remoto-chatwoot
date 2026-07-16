@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  test_postgres:
+    image: postgres:15-alpine
+    container_name: crm-test-db
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=crm_parceiro
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      # Monta o arquivo SQL para que seja executado assim que o banco de dados iniciar pela primeira vez
+      - ./init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql
