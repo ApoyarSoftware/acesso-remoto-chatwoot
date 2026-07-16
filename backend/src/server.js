@@ -129,6 +129,47 @@ app.get('/api/filiais-da-rede', authenticate, async (req, res) => {
   }
 });
 
+// GET /api/filiais/search (Pesquisa global por CNPJ, Filial ou Rede)
+app.get('/api/filiais/search', authenticate, async (req, res) => {
+  const { q } = req.query;
+  if (!q) {
+    return res.status(400).json({ error: 'Termo de pesquisa é obrigatório.' });
+  }
+  try {
+    const query = `
+      SELECT 
+          f.cnpj,
+          f.nome_fantasia AS empresa,
+          r.descricao_rede,
+          f.cidade,
+          f.uf,
+          f.unidade_negocio_id,
+          r.codigo_rede,
+          r.usuario AS acesso,
+          r.senha,
+          r.descricao_versao AS versao_retaguarda,
+          f.ativo,
+          f.cfi_bl_imendes,
+          f.data_ultima_venda
+      FROM 
+          filial f
+      JOIN 
+          rede r ON f.codigo_rede = r.codigo_rede
+      WHERE 
+          f.cnpj LIKE $1
+          OR f.nome_fantasia ILIKE $1
+          OR r.descricao_rede ILIKE $1
+      LIMIT 15;
+    `;
+    const searchPattern = `%${q}%`;
+    const result = await pool.query(query, [searchPattern]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao pesquisar filiais.', details: err.message });
+  }
+});
+
 // GET /api/filial/:cnpj (Replica Consulta_filial)
 app.get('/api/filial/:cnpj', authenticate, async (req, res) => {
   const { cnpj } = req.params;

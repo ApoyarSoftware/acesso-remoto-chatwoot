@@ -124,6 +124,50 @@ function App() {
   const [selectedFilial, setSelectedFilial] = useState(null);
   const [acessos, setAcessos] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Global Search State
+  const [globalSearchTerm, setGlobalSearchTerm] = useState('');
+  const [globalSearchResults, setGlobalSearchResults] = useState([]);
+
+  // Global search handler
+  const handleGlobalSearch = async (e) => {
+    e.preventDefault();
+    if (!globalSearchTerm.trim()) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/filiais/search?q=${encodeURIComponent(globalSearchTerm)}`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      if (response.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+      if (!response.ok) throw new Error('Erro ao pesquisar filiais.');
+      const data = await response.json();
+      setGlobalSearchResults(data);
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Select a search result
+  const handleSelectSearchResult = (filial) => {
+    setInitialQuery({ cnpj: filial.cnpj });
+    setSelectedCnpj(filial.cnpj);
+    setGlobalSearchResults([]);
+    setGlobalSearchTerm('');
+  };
+
+  // Reset selected filial to search again
+  const handleResetSelection = () => {
+    setSelectedCnpj('');
+    setSelectedFilial(null);
+    setFiliais([]);
+    setAcessos([]);
+    setInitialQuery(null);
+  };
   
   // Loading & UI States
   const [loading, setLoading] = useState(false);
@@ -532,153 +576,214 @@ function App() {
         </div>
       </header>
 
-      {/* Select Filial */}
-      <div className="select-container">
-        <label className="select-label">Selecione a Filial</label>
-        <select 
-          value={selectedCnpj} 
-          onChange={(e) => setSelectedCnpj(e.target.value)}
-          disabled={loading && filiais.length === 0}
-        >
-          <option value="">-- Selecione uma Filial --</option>
-          {filiais.map(f => (
-            <option key={f.cnpj} value={f.cnpj}>
-              {f.empresa} ({formatCnpj(f.cnpj)})
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Details Card */}
-      {selectedFilial && (
-        <div className="filial-card">
-          <div className="filial-title">
-            <span>{selectedFilial.nome_fantasia || selectedFilial.empresa}</span>
-            <span className={`badge ${selectedFilial.ativo ? 'badge-active' : 'badge-inactive'}`}>
-              {selectedFilial.ativo ? 'Ativo' : 'Inativo'}
-            </span>
+      {!selectedCnpj ? (
+        <div className="global-search-container" style={{ display: 'flex', flexDirection: 'column', gap: '2rem', marginTop: '1rem', width: '100%' }}>
+          <div style={{ textAlign: 'center', margin: '2rem 0 1rem' }}>
+            <h1 style={{ fontSize: '2rem', fontWeight: '800', marginBottom: '0.5rem', background: 'linear-gradient(90deg, var(--text-primary), var(--accent))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              Pesquisar Filial ou Rede
+            </h1>
+            <p style={{ color: 'var(--text-secondary)' }}>Busque por CNPJ, nome da filial ou rede para visualizar os acessos</p>
           </div>
-          
-          <div className="info-grid">
-            <div className="info-item">
-              <span className="info-label">CNPJ</span>
-              <span className="info-value">{formatCnpj(selectedFilial.cnpj)}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Região</span>
-              <span className="info-value">{selectedFilial.cidade} - {selectedFilial.uf}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Rede</span>
-              <span className="info-value">{selectedFilial.descricao_rede}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Versão Retaguarda</span>
-              <span className="info-value">{selectedFilial.versao_retaguarda || 'Não inf.'}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">IMendes</span>
-              <span className="info-value">{selectedFilial.cfi_bl_imendes ? 'Ativado' : 'Desativado'}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">ID Filial / ID Rede</span>
-              <span className="info-value">F: {selectedFilial.unidade_negocio_id} / R: {selectedFilial.codigo_rede}</span>
-            </div>
-            <div className="info-item">
-              <span className="info-label">Rede Acesso / Senha</span>
-              <span className="info-value">
-                <span>{selectedFilial.acesso}</span>
-                {selectedFilial.senha && (
-                  <button 
-                    className="btn-icon" 
-                    title="Copiar Senha da Rede"
-                    onClick={() => copyToClipboard(selectedFilial.senha, 'rede-pwd')}
-                  >
-                    {copiedId === 'rede-pwd' ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
-                  </button>
-                )}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Access List Section */}
-      <div className="section-header">
-        {/* Adicionado contador dinâmico (filteredAcessos.length) ao lado do título */}
-        <span className="section-title">Acessos Remotos Disponíveis ({filteredAcessos.length})</span>
-        <button 
-          className="btn btn-primary" 
-          onClick={handleOpenCreateModal}
-          disabled={!selectedFilial}
-        >
-          <Plus size={16} /> Novo Acesso
-        </button>
-      </div>
+          <form onSubmit={handleGlobalSearch} style={{ display: 'flex', gap: '10px', maxWidth: '600px', width: '100%', margin: '0 auto' }}>
+            <input 
+              type="text" 
+              placeholder="Digite o CNPJ, nome da filial ou rede..." 
+              value={globalSearchTerm} 
+              onChange={(e) => setGlobalSearchTerm(e.target.value)}
+              style={{ flex: 1, padding: '0.85rem 1.2rem', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--card-bg)', color: 'var(--text-primary)', fontSize: '1rem', outline: 'none' }}
+            />
+            <button type="submit" className="btn btn-primary" style={{ padding: '0 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: '8px', fontSize: '1rem' }}>
+              <Search size={18} />
+              Buscar
+            </button>
+          </form>
 
-      {/* Search Input */}
-      <div style={{ marginBottom: '14px', position: 'relative' }}>
-        <input 
-          type="text" 
-          placeholder="Filtrar acessos por equipamento, software, usuário..." 
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ paddingLeft: '36px' }}
-        />
-        <Search size={16} color="var(--text-secondary)" style={{ position: 'absolute', left: '12px', top: '13px' }} />
-      </div>
+          {loading && (
+            <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
+              <RefreshCw className="spin" size={32} style={{ marginBottom: '1rem', color: 'var(--accent)' }} />
+              <p>Pesquisando filiais...</p>
+            </div>
+          )}
 
-      {loading && acessos.length === 0 ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '40px', gap: '8px' }}>
-          <RefreshCw className="spin" size={20} /> Carregando acessos...
-        </div>
-      ) : filteredAcessos.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)', border: '1px dashed var(--border)', borderRadius: '10px' }}>
-          Nenhum acesso remoto cadastrado para esta filial.
+          {!loading && globalSearchResults.length > 0 && (
+            <div className="search-results-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.25rem', maxWidth: '1000px', width: '100%', margin: '0 auto' }}>
+              {globalSearchResults.map(f => (
+                <div 
+                  key={f.cnpj} 
+                  onClick={() => handleSelectSearchResult(f)}
+                  style={{ padding: '1.25rem', borderRadius: '10px', border: '1px solid var(--border)', background: 'var(--card-bg)', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
+                  className="search-result-card"
+                >
+                  <div style={{ fontWeight: '700', fontSize: '1.1rem', color: 'var(--text-primary)' }}>{f.empresa}</div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>CNPJ: {formatCnpj(f.cnpj)}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.5rem' }}>
+                    <span style={{ fontSize: '0.8rem', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '4px', color: 'var(--accent)' }}>{f.descricao_rede}</span>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{f.cidade} - {f.uf}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!loading && globalSearchTerm && globalSearchResults.length === 0 && (
+            <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '3rem 2rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--border)', maxWidth: '500px', margin: '0 auto', width: '100%' }}>
+              Nenhuma filial encontrada para o termo pesquisado.
+            </div>
+          )}
         </div>
       ) : (
         <>
+          {/* Select Filial */}
+          <div className="select-container" style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end' }}>
+            <div style={{ flex: 1 }}>
+              <label className="select-label">Selecione a Filial</label>
+              <select 
+                value={selectedCnpj} 
+                onChange={(e) => setSelectedCnpj(e.target.value)}
+                disabled={loading && filiais.length === 0}
+              >
+                <option value="">-- Selecione uma Filial --</option>
+                {filiais.map(f => (
+                  <option key={f.cnpj} value={f.cnpj}>
+                    {f.empresa} ({formatCnpj(f.cnpj)})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button 
+              onClick={handleResetSelection}
+              className="btn btn-secondary"
+              style={{ height: '42px', display: 'flex', alignItems: 'center', gap: '0.5rem', whiteSpace: 'nowrap', padding: '0 1rem' }}
+            >
+              <Search size={16} /> Nova Busca
+            </button>
+          </div>
+
+          {/* Details Card */}
+          {selectedFilial && (
+            <div className="filial-card">
+              <div className="filial-title">
+                <span>{selectedFilial.nome_fantasia || selectedFilial.empresa}</span>
+                <span className={`badge ${selectedFilial.ativo ? 'badge-active' : 'badge-inactive'}`}>
+                  {selectedFilial.ativo ? 'Ativo' : 'Inativo'}
+                </span>
+              </div>
+              
+              <div className="info-grid">
+                <div className="info-item">
+                  <span className="info-label">CNPJ</span>
+                  <span className="info-value">{formatCnpj(selectedFilial.cnpj)}</span>
+                </div>
+                <div className="info-item">
+                  <span className="info-label">Região</span>
+                  <span className="info-value">{selectedFilial.cidade} - {selectedFilial.uf}</span>
+                </div>
+                <div className="info-item">
+                  <span className="info-label">Rede</span>
+                  <span className="info-value">{selectedFilial.descricao_rede}</span>
+                </div>
+                <div className="info-item">
+                  <span className="info-label">Versão Retaguarda</span>
+                  <span className="info-value">{selectedFilial.versao_retaguarda || 'Não inf.'}</span>
+                </div>
+                <div className="info-item">
+                  <span className="info-label">IMendes</span>
+                  <span className="info-value">{selectedFilial.cfi_bl_imendes ? 'Ativado' : 'Desativado'}</span>
+                </div>
+                <div className="info-item">
+                  <span className="info-label">ID Filial / ID Rede</span>
+                  <span className="info-value">F: {selectedFilial.unidade_negocio_id} / R: {selectedFilial.codigo_rede}</span>
+                </div>
+                <div className="info-item">
+                  <span className="info-label">Rede Acesso / Senha</span>
+                  <span className="info-value">
+                    <span>{selectedFilial.acesso}</span>
+                    {selectedFilial.senha && (
+                      <button 
+                        className="btn-icon" 
+                        title="Copiar Senha da Rede"
+                        onClick={() => copyToClipboard(selectedFilial.senha, 'rede-pwd')}
+                      >
+                        {copiedId === 'rede-pwd' ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
+                      </button>
+                    )}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Access List Section */}
+          <div className="section-header">
+            <span className="section-title">Acessos Remotos Disponíveis ({filteredAcessos.length})</span>
+            <button 
+              className="btn btn-primary" 
+              onClick={handleOpenCreateModal}
+              disabled={!selectedFilial}
+            >
+              <Plus size={16} /> Novo Acesso
+            </button>
+          </div>
+
+          {/* local search and accesses view container */}
+          <div className="search-bar">
+            <Search size={18} />
+            <input 
+              type="text" 
+              placeholder="Pesquisar por equipamento, setor, software, ID ou usuário..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
           {/* Desktop Table View */}
-          <div className="table-container hidden-mobile">
+          <div className="table-responsive hidden-mobile">
             <table>
               <thead>
                 <tr>
-                  <th>Software</th>
                   <th>Equipamento</th>
                   <th>Setor</th>
-                  <th>ID Acesso</th>
+                  <th>Software</th>
+                  <th>ID de Acesso</th>
                   <th>Senha</th>
                   <th>Usuário</th>
-                  <th style={{ textAlign: 'right' }}>Ações</th>
+                  <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredAcessos.map(acesso => (
                   <tr key={acesso.id}>
+                    <td className="font-bold">{acesso.equipamento}</td>
+                    <td>{acesso.setor}</td>
                     <td>
-                      {/* Logotipos SVG adicionados ao badge do software para facilitar a identificação rápida */}
                       <span className={`badge ${acesso.software === 'ANYDESK' ? 'badge-software-anydesk' : 'badge-software-rustdesk'}`}>
                         {acesso.software === 'ANYDESK' ? <AnyDeskIcon /> : <RustDeskIcon />}
                         {acesso.software}
                       </span>
                     </td>
-                    <td>{acesso.equipamento}</td>
-                    <td>{acesso.setor}</td>
-                    {/* Tooltip nativo (title) adicionado para feedback claro de cópia */}
-                    <td className="copyable" title="Copiar ID" onClick={() => copyToClipboard(acesso.id_acesso, `id-${acesso.id}`)}>
-                      <div className="flex-center">
+                    <td>
+                      <div 
+                        className="info-value copyable" 
+                        title="Copiar ID"
+                        onClick={() => copyToClipboard(acesso.id_acesso, `id-${acesso.id}`)}
+                      >
                         {acesso.id_acesso}
-                        {copiedId === `id-${acesso.id}` ? <Check size={12} color="var(--success)" /> : <Copy size={12} />}
+                        {copiedId === `id-${acesso.id}` ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
                       </div>
                     </td>
-                    <td className="copyable" title="Copiar Senha" onClick={() => copyToClipboard(acesso.senha, `senha-${acesso.id}`)}>
-                      <div className="flex-center">
+                    <td>
+                      <div 
+                        className="info-value copyable" 
+                        title="Copiar Senha"
+                        onClick={() => copyToClipboard(acesso.senha, `senha-${acesso.id}`)}
+                      >
                         ••••••••
-                        {copiedId === `senha-${acesso.id}` ? <Check size={12} color="var(--success)" /> : <Copy size={12} />}
+                        {copiedId === `senha-${acesso.id}` ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
                       </div>
                     </td>
                     <td>{acesso.usuario || '-'}</td>
-                    <td style={{ textAlign: 'right' }}>
+                    <td>
                       <button 
                         className="btn-icon" 
                         onClick={() => handleConnect(acesso)}
