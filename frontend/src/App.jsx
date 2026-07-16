@@ -261,6 +261,7 @@ function App() {
   // 2. Busca filiais da rede quando o query inicial muda
   useEffect(() => {
     if (!initialQuery) return;
+    if (!authToken) return; // Evita chamadas antes do token de autenticação estar disponível
 
     const fetchFiliaisDaRede = async () => {
       setLoading(true);
@@ -309,6 +310,7 @@ function App() {
   // 3. Busca detalhes da filial e os acessos quando o CNPJ selecionado muda
   useEffect(() => {
     if (!selectedCnpj) return;
+    if (!authToken) return; // Evita chamadas antes do token de autenticação estar disponível
 
     const fetchDetailsAndAcessos = async () => {
       setLoading(true);
