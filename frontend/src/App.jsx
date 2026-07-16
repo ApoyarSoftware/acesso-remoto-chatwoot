@@ -560,33 +560,19 @@ function App() {
     }
   };
 
-  // Iniciar e preencher o WebPosto local
-  const handleLaunchWebposto = async (user, password) => {
+  // Iniciar e preencher o WebPosto local via protocolo personalizado
+  const handleLaunchWebposto = (user, password) => {
     if (!user || !password) {
       showToast('Dados de acesso (usuário/senha) não encontrados para o WebPosto.', 'error');
       return;
     }
-    setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/launch-webposto`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
-        body: JSON.stringify({ user, password })
-      });
-      if (response.status === 401) {
-        handleUnauthorized();
-        return;
-      }
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Erro ao iniciar o WebPosto.');
-      showToast(data.message || 'WebPosto iniciado com sucesso!');
+      const encodedUser = encodeURIComponent(user);
+      const encodedPass = encodeURIComponent(password);
+      window.location.href = `quality://login?user=${encodedUser}&pass=${encodedPass}`;
+      showToast('Abrindo o WebPosto local...');
     } catch (err) {
-      showToast(err.message, 'error');
-    } finally {
-      setLoading(false);
+      showToast('Erro ao iniciar o WebPosto.', 'error');
     }
   };
 

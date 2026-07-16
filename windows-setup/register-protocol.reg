@@ -1,0 +1,12 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CLASSES_ROOT\quality]
+@="URL:Quality WebPosto Protocol"
+"URL Protocol"=""
+
+[HKEY_CLASSES_ROOT\quality\shell]
+
+[HKEY_CLASSES_ROOT\quality\shell\open]
+
+[HKEY_CLASSES_ROOT\quality\shell\open\command]
+@="powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File \"C:\\Quality\\launch.ps1\" \"%1\""
